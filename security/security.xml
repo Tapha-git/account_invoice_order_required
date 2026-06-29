@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="group_allow_invoice_without_order" model="res.groups">
+        <field name="name">Autoriser les factures sans bon de commande</field>
+        <field name="category_id" ref="base.module_category_usability"/>
+    </record>
+</odoo>

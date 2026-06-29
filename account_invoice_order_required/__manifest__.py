@@ -14,6 +14,9 @@
     "data": [
         "security/security.xml",
     ],
+    "images": [
+        "static/description/banner.png",
+    ],
     "installable": True,
     "application": False,
 }

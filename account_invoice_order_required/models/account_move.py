@@ -48,6 +48,8 @@ class AccountMove(models.Model):
         self.ensure_one()
         if self.line_ids.sale_line_ids:
             return True
+        if self._source_document_has_order_reference(("S", "SO")):
+            return True
         return bool(self._matching_origin_orders("sale.order"))
 
     def _has_purchase_order_source(self):
@@ -56,7 +58,21 @@ class AccountMove(models.Model):
             return True
         if "purchase_id" in self._fields and self.purchase_id:
             return True
+        if self._source_document_has_order_reference(("P", "PO", "PUR", "RFQ")):
+            return True
         return bool(self._matching_origin_orders("purchase.order"))
+
+    def _source_document_has_order_reference(self, prefixes):
+        """Check the visible Source Document field before using chatter fallback."""
+        self.ensure_one()
+        source_document = self.invoice_origin or ""
+        if not source_document:
+            return False
+        references = self._extract_order_references(source_document)
+        return any(
+            reference.upper().startswith(tuple(prefix.upper() for prefix in prefixes))
+            for reference in references
+        )
 
     def _origin_names(self):
         """Return normalized source document names from invoice metadata.
@@ -100,13 +116,7 @@ class AccountMove(models.Model):
             if source_match:
                 candidates.add(source_match.group(1).strip())
 
-            candidates.update(
-                re.findall(
-                    r"\b(?:P|PO|PUR|RFQ|S|SO)\d{2,}\b",
-                    origin,
-                    flags=re.IGNORECASE,
-                )
-            )
+            candidates.update(self._extract_order_references(origin))
 
             for candidate in candidates:
                 candidate = candidate.strip().strip(":")
@@ -118,6 +128,14 @@ class AccountMove(models.Model):
                     origins.add(first_token)
 
         return origins
+
+    @staticmethod
+    def _extract_order_references(text):
+        return re.findall(
+            r"\b(?:PO|PUR|RFQ|SO|P|S)\d{2,}\b",
+            text or "",
+            flags=re.IGNORECASE,
+        )
 
     def _matching_origin_orders(self, model_name):
         self.ensure_one()

@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+import re
+
 from odoo import _, models
 from odoo.exceptions import UserError
 
@@ -54,14 +56,31 @@ class AccountMove(models.Model):
         return bool(self._matching_origin_orders("purchase.order"))
 
     def _origin_names(self):
+        """Return normalized source document names from invoice_origin.
+
+        Odoo sometimes displays invoice origins with extra UI/context text, e.g.
+        "P00307 (x)" or ":P00307 (x)". The actual order name remains "P00307".
+        """
         self.ensure_one()
         if not self.invoice_origin:
             return []
-        return [
-            origin.strip()
-            for origin in self.invoice_origin.replace(";", ",").split(",")
-            if origin.strip()
-        ]
+
+        origins = set()
+        for raw_origin in re.split(r"[,;\n]+", self.invoice_origin):
+            origin = raw_origin.strip().lstrip(":").strip()
+            if not origin:
+                continue
+            origins.add(origin)
+
+            without_parenthesis = re.sub(r"\s*\([^)]*\)\s*$", "", origin).strip()
+            if without_parenthesis:
+                origins.add(without_parenthesis)
+
+            first_token = without_parenthesis.split()[0] if without_parenthesis else origin.split()[0]
+            if first_token:
+                origins.add(first_token.strip(":"))
+
+        return list(origins)
 
     def _matching_origin_orders(self, model_name):
         self.ensure_one()

@@ -2,8 +2,11 @@
 
 import re
 
+from markupsafe import Markup
+
 from odoo import _, models
 from odoo.exceptions import UserError
+from odoo.tools import html2plaintext
 
 
 class AccountMove(models.Model):
@@ -56,31 +59,67 @@ class AccountMove(models.Model):
         return bool(self._matching_origin_orders("purchase.order"))
 
     def _origin_names(self):
-        """Return normalized source document names from invoice_origin.
+        """Return normalized source document names from invoice metadata.
 
-        Odoo sometimes displays invoice origins with extra UI/context text, e.g.
-        "P00307 (x)" or ":P00307 (x)". The actual order name remains "P00307".
+        Besides ``invoice_origin``, Odoo may only keep the source purchase order
+        in the chatter, e.g. "Cette facture fournisseur a été créée depuis :P00250".
         """
         self.ensure_one()
-        if not self.invoice_origin:
-            return []
-
         origins = set()
-        for raw_origin in re.split(r"[,;\n]+", self.invoice_origin):
+        origins.update(self._extract_origin_names(self.invoice_origin or ""))
+
+        for message in self.message_ids:
+            body = html2plaintext(message.body or "")
+            body = str(Markup(body).unescape())
+            if self._message_mentions_source_order(body):
+                origins.update(self._extract_origin_names(body))
+
+        return list(origins)
+
+    @staticmethod
+    def _message_mentions_source_order(body):
+        body = (body or "").lower()
+        return (
+            "créée depuis" in body
+            or "créé depuis" in body
+            or "created from" in body
+            or "generated from" in body
+        )
+
+    @staticmethod
+    def _extract_origin_names(text):
+        origins = set()
+        if not text:
+            return origins
+
+        for raw_origin in re.split(r"[,;\n]+", text):
             origin = raw_origin.strip().lstrip(":").strip()
             if not origin:
                 continue
-            origins.add(origin)
 
-            without_parenthesis = re.sub(r"\s*\([^)]*\)\s*$", "", origin).strip()
-            if without_parenthesis:
-                origins.add(without_parenthesis)
+            candidates = {
+                origin,
+                re.sub(r"\s*\([^)]*\)\s*$", "", origin).strip(),
+            }
 
-            first_token = without_parenthesis.split()[0] if without_parenthesis else origin.split()[0]
-            if first_token:
-                origins.add(first_token.strip(":"))
+            source_match = re.search(
+                r"(?:depuis|from)\s*:?\s*([A-Za-z0-9][A-Za-z0-9_./-]*)",
+                origin,
+                flags=re.IGNORECASE,
+            )
+            if source_match:
+                candidates.add(source_match.group(1).strip())
 
-        return list(origins)
+            for candidate in candidates:
+                candidate = candidate.strip().strip(":")
+                if not candidate:
+                    continue
+                origins.add(candidate)
+                first_token = candidate.split()[0].strip(":")
+                if first_token:
+                    origins.add(first_token)
+
+        return origins
 
     def _matching_origin_orders(self, model_name):
         self.ensure_one()

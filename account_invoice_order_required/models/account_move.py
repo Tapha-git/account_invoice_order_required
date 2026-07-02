@@ -21,8 +21,7 @@ class AccountMove(models.Model):
             if move.move_type not in ("out_invoice", "in_invoice"):
                 continue
 
-            invoice_lines = move.invoice_line_ids.filtered(lambda line: not line.display_type)
-            if move.move_type == "out_invoice" and not self._has_sale_order_line(invoice_lines):
+            if move.move_type == "out_invoice" and not move._has_sale_order_source():
                 raise UserError(
                     _(
                         "Validation impossible.\n\n"
@@ -31,7 +30,7 @@ class AccountMove(models.Model):
                     )
                 )
 
-            if move.move_type == "in_invoice" and not self._has_purchase_order_line(invoice_lines):
+            if move.move_type == "in_invoice" and not move._has_purchase_order_source():
                 raise UserError(
                     _(
                         "Validation impossible.\n\n"
@@ -40,10 +39,46 @@ class AccountMove(models.Model):
                     )
                 )
 
-    @staticmethod
-    def _has_sale_order_line(invoice_lines):
-        return any(line.sale_line_ids for line in invoice_lines)
+    def _has_sale_order_source(self):
+        self.ensure_one()
+        if self.line_ids.sale_line_ids:
+            return True
+        return bool(self._matching_origin_orders("sale.order"))
 
-    @staticmethod
-    def _has_purchase_order_line(invoice_lines):
-        return any(line.purchase_line_id for line in invoice_lines)
+    def _has_purchase_order_source(self):
+        self.ensure_one()
+        if self.line_ids.purchase_line_id:
+            return True
+        if "purchase_id" in self._fields and self.purchase_id:
+            return True
+        return bool(self._matching_origin_orders("purchase.order"))
+
+    def _origin_names(self):
+        self.ensure_one()
+        if not self.invoice_origin:
+            return []
+        return [
+            origin.strip()
+            for origin in self.invoice_origin.replace(";", ",").split(",")
+            if origin.strip()
+        ]
+
+    def _matching_origin_orders(self, model_name):
+        self.ensure_one()
+        origins = self._origin_names()
+        if not origins or model_name not in self.env:
+            return self.env[model_name]
+
+        orders = self.env[model_name].search([
+            ("name", "in", origins),
+            ("company_id", "in", [False, self.company_id.id]),
+        ])
+        return orders.filtered(lambda order: self._same_commercial_partner(order))
+
+    def _same_commercial_partner(self, order):
+        self.ensure_one()
+        invoice_partner = self.partner_id.commercial_partner_id
+        candidate_partners = order.partner_id.commercial_partner_id
+        if "partner_invoice_id" in order._fields and order.partner_invoice_id:
+            candidate_partners |= order.partner_invoice_id.commercial_partner_id
+        return invoice_partner in candidate_partners

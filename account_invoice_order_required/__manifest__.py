@@ -2,7 +2,7 @@
 {
     "name": "Invoice Order Required",
     "summary": "Block customer and vendor invoices that are not generated from sale or purchase orders",
-    "version": "18.0.1.0.7",
+    "version": "18.0.1.0.8",
     "category": "Accounting/Accounting",
     "author": "MMLY",
     "license": "OPL-1",

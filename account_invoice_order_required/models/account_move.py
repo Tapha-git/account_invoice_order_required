@@ -46,6 +46,8 @@ class AccountMove(models.Model):
 
     def _has_sale_order_source(self):
         self.ensure_one()
+        if self.invoice_origin:
+            return True
         if self.line_ids.sale_line_ids:
             return True
         if self._source_document_has_order_reference(("S", "SO")):
@@ -54,6 +56,8 @@ class AccountMove(models.Model):
 
     def _has_purchase_order_source(self):
         self.ensure_one()
+        if self.invoice_origin:
+            return True
         if self.line_ids.purchase_line_id:
             return True
         if "purchase_id" in self._fields and self.purchase_id:

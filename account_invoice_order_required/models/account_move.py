@@ -68,10 +68,11 @@ class AccountMove(models.Model):
         origins = set()
         origins.update(self._extract_origin_names(self.invoice_origin or ""))
 
-        for message in self.message_ids:
-            body = html2plaintext(message.body or "")
-            body = str(Markup(body).unescape())
-            origins.update(self._extract_origin_names(body))
+        for message in self.sudo().message_ids:
+            html_body = str(Markup(message.body or "").unescape())
+            text_body = html2plaintext(html_body)
+            origins.update(self._extract_origin_names(html_body))
+            origins.update(self._extract_origin_names(text_body))
 
         return list(origins)
 
@@ -99,6 +100,14 @@ class AccountMove(models.Model):
             if source_match:
                 candidates.add(source_match.group(1).strip())
 
+            candidates.update(
+                re.findall(
+                    r"\b(?:P|PO|PUR|RFQ|S|SO)\d{2,}\b",
+                    origin,
+                    flags=re.IGNORECASE,
+                )
+            )
+
             for candidate in candidates:
                 candidate = candidate.strip().strip(":")
                 if not candidate:
@@ -116,8 +125,13 @@ class AccountMove(models.Model):
         if not origins or model_name not in self.env:
             return self.env[model_name]
 
-        orders = self.env[model_name].sudo().search([
+        Order = self.env[model_name].sudo()
+        orders = Order.search([
             ("name", "in", origins),
             ("company_id", "in", [False, self.company_id.id]),
         ])
+        if not orders:
+            orders = Order.search([
+                ("name", "in", origins),
+            ])
         return orders

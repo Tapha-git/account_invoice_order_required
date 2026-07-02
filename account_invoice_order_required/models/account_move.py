@@ -71,20 +71,9 @@ class AccountMove(models.Model):
         for message in self.message_ids:
             body = html2plaintext(message.body or "")
             body = str(Markup(body).unescape())
-            if self._message_mentions_source_order(body):
-                origins.update(self._extract_origin_names(body))
+            origins.update(self._extract_origin_names(body))
 
         return list(origins)
-
-    @staticmethod
-    def _message_mentions_source_order(body):
-        body = (body or "").lower()
-        return (
-            "créée depuis" in body
-            or "créé depuis" in body
-            or "created from" in body
-            or "generated from" in body
-        )
 
     @staticmethod
     def _extract_origin_names(text):
@@ -127,16 +116,8 @@ class AccountMove(models.Model):
         if not origins or model_name not in self.env:
             return self.env[model_name]
 
-        orders = self.env[model_name].search([
+        orders = self.env[model_name].sudo().search([
             ("name", "in", origins),
             ("company_id", "in", [False, self.company_id.id]),
         ])
-        return orders.filtered(lambda order: self._same_commercial_partner(order))
-
-    def _same_commercial_partner(self, order):
-        self.ensure_one()
-        invoice_partner = self.partner_id.commercial_partner_id
-        candidate_partners = order.partner_id.commercial_partner_id
-        if "partner_invoice_id" in order._fields and order.partner_invoice_id:
-            candidate_partners |= order.partner_invoice_id.commercial_partner_id
-        return invoice_partner in candidate_partners
+        return orders
